@@ -11,7 +11,7 @@ module Azimux
 
 public
     def initialize association_name, owner, options
-      self.target_class = options[:class_name] || infer_target_class(association_name)
+      self.target_class = (options[:class_name] || infer_target_class(association_name)).constantize
       self.primary_key = options[:primary_key] || owner.id
       self.foreign_key_column = options[:foreign_key] || infer_foreign_key_column(owner)
       self.key_column = options[:key] || 'key'
@@ -87,7 +87,7 @@ public
     end
 
     def infer_target_class association_name
-      association_name.to_s.underscore
+      association_name.to_s.singularize.camelize
     end
     def infer_foreign_key_column owner
       owner.class.to_s.foreign_key
