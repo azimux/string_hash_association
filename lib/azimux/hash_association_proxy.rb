@@ -15,8 +15,8 @@ module Azimux
       self.target_class = (options[:class_name] || infer_target_class(association_name)).constantize
       self.primary_key = options[:primary_key] || owner.id
       self.foreign_key_column = options[:foreign_key] || infer_foreign_key_column(owner)
-      self.key_column = options[:key] || 'key'
-      self.value_column = options[:key] || 'value'
+      self.key_column = options[:key_column] || 'key'
+      self.value_column = options[:value_column] || 'value'
     end
 
     def [] key
@@ -50,7 +50,7 @@ module Azimux
     end
 
     def row_by_key(key)
-      target_class.find(:first, :conditions => ["#{key_column} = ? && #{foreign_key_column} = ?", key, primary_key])
+      target_class.find(:first, :conditions => ["#{key_column} = ? AND #{foreign_key_column} = ?", key, primary_key])
     end
 
     def clear

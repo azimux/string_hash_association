@@ -21,7 +21,7 @@ module Azimux
             :references => fk
         end
 
-        add_index name, [ownerid, :name]
+        add_index name, [ownerid, :name], :unique => true
       end
 
       def remove_hash_association_table name
