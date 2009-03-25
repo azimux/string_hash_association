@@ -78,6 +78,9 @@ module Azimux
       end
     end
 
+    def models
+      g_hash_cache.values
+    end
 
     private
     def g_hash_cache
