@@ -1,43 +1,46 @@
 module Azimux
   class HashAssociationProxy
-    attr_accessor :target_class
-    attr_accessor :primary_key
-    attr_accessor :foreign_key_column
-    attr_accessor :key_column
-    attr_accessor :value_column
-    attr_accessor :owner
+    attr_accessor :target_class,
+      :primary_key_column,
+      :foreign_key_column,
+      :key_column,
+      :value_column,
+      :owner
 
-    private :target_class, :primary_key, :key_column, :value_column, :owner
+    private :target_class, :primary_key_column, :key_column, :value_column, :owner
 
     public
     def initialize association_name, owner, options
       self.owner = owner
       self.target_class = (options[:class_name] || infer_target_class(association_name)).constantize
-      self.primary_key = options[:primary_key] || owner.id
+      self.primary_key_column = options[:primary_key] || :id
       self.foreign_key_column = options[:foreign_key] || infer_foreign_key_column(owner)
       self.key_column = options[:key_column] || 'key'
       self.value_column = options[:value_column] || 'value'
     end
 
+    def primary_key
+      owner.send(primary_key_column)
+    end
+
     def [] key
       g_hash_cache[key] if owner.new_record?
 
-      row ||= g_hash_cache[key]
-
-      if row.nil?
-        row = g_hash_cache[key] ||= row_by_key(key)
-      end
+      row = g_hash_cache[key] || row_by_key(key)
 
       row && row.send(value_column)
     end
 
     def []= key, value
-      g_hash_cache[key] ||= row_by_key
+      row ||= g_hash_cache[key] ||= row_by_key(key)
+      if row
+        row.send(value_column, value)
+      else
+        row = g_hash_cache[key] ||= target_class.new(key_column => key,
+          value_column => value, foreign_key_column => primary_key)
+      end
 
-      row ||= g_hash_cache[key] ||= target_class.new(key_column => key,
-        value_column => value, foreign_key_column => primary_key)
-
-      g_hash_cache[key].save unless new_record?
+      row.save unless owner.new_record?
       value
     end
 
@@ -56,6 +59,7 @@ module Azimux
     def clear
       target_class.delete_all(["#{foreign_key_column} = ?", primary_key])
       g_hash_cache.clear
+      @fully_loaded = false
     end
 
     def delete(key)
@@ -69,11 +73,13 @@ module Azimux
       end
     end
 
-    def save
-      g_hash_cache.values.each do |value|
-        if value.new_record? || value.send(association.foreign_key_column) != id
-          value.send("#{foreign_key_column}=", id)
-          value.save(true)
+    ["","!"].each do |s|
+      define_method :save do
+        g_hash_cache.values.each do |value|
+          if value.new_record? || value.send(association.foreign_key_column) != id
+            value.send("#{foreign_key_column}=", id)
+            value.send("save#{s}", true)
+          end
         end
       end
     end
@@ -97,7 +103,7 @@ module Azimux
     end
 
     def fully_loaded?
-      @fully_loaded ||= false
+      @fully_loaded
     end
 
     %w(infer_target_class
