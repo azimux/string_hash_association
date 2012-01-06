@@ -7,14 +7,14 @@ module Azimux
       :value_column,
       :owner
 
-    private :target_class, :primary_key_column, :key_column, :value_column, :owner
-
-    public
     def initialize association_name, owner, options
       self.owner = owner
-      self.target_class = (options[:class_name] || infer_target_class(association_name)).constantize
+      self.target_class = (
+        options[:class_name] || infer_target_class(association_name)
+      ).constantize
       self.primary_key_column = options[:primary_key] || :id
-      self.foreign_key_column = options[:foreign_key] || infer_foreign_key_column(owner)
+      self.foreign_key_column =
+        options[:foreign_key] || infer_foreign_key_column(owner)
       self.key_column = options[:key_column] || 'key'
       self.value_column = options[:value_column] || 'value'
     end
@@ -24,20 +24,21 @@ module Azimux
     end
 
     def [] key
-      g_hash_cache[key] if owner.new_record?
-
       row = g_hash_cache[key] || row_by_key(key)
 
-      row && row.send(value_column)
+      row.try(value_column)
     end
 
     def []= key, value
       row ||= g_hash_cache[key] ||= row_by_key(key)
       if row
-        row.send(value_column, value)
+        row.send("#{value_column}=", value)
       else
-        row = g_hash_cache[key] ||= target_class.new(key_column => key,
-          value_column => value, foreign_key_column => primary_key)
+        row = g_hash_cache[key] ||= target_class.new(
+          key_column => key,
+          value_column => value, 
+          foreign_key_column => primary_key
+        )
       end
 
       row.save unless owner.new_record?
@@ -45,15 +46,17 @@ module Azimux
     end
 
     def each_pair
-      g_hash_cache.fully_load
+      fully_load
 
-      g_hash_cache.each_pair do |key,value|
+      g_hash_cache.each_pair do |key, value|
         yield key, value.send(value_column)
       end
     end
 
     def row_by_key(key)
-      target_class.find(:first, :conditions => ["#{key_column} = ? AND #{foreign_key_column} = ?", key, primary_key])
+      target_class.where(
+        ["#{key_column} = ? AND #{foreign_key_column} = ?", key, primary_key]
+      ).first
     end
 
     def clear
@@ -92,9 +95,10 @@ module Azimux
     def g_hash_cache
       @g_hash_cache ||= {}
     end
+
     def fully_load
       unless fully_loaded?
-        target_class.find(:first, :conditions => ["#{foreign_key_column} = ?", primary_key]).each do |row|
+        target_class.where(["#{foreign_key_column} = ?", primary_key]).each do |row|
           g_hash_cache[row.send(key_column)] ||= row
         end
 
@@ -123,54 +127,30 @@ module Azimux
     end
 
 
-    def self.infer_target_class association_name
-      association_name.to_s.singularize.camelize
-    end
+    class << self
+      def self.infer_target_class association_name
+        association_name.to_s.singularize.camelize
+      end
 
-    def self.infer_foreign_key_column owner
-      owner.class.to_s.foreign_key
-    end
+      def infer_foreign_key_column owner
+        owner.class.to_s.foreign_key
+      end
 
-    def self.col_types
-      %w(integer string text boolean)
-    end
-    def self.infer_owner_table name
-      if name.to_s =~ /^(\S*)_(?:#{col_types.join("|")})_options$/
-        $1.pluralize
+      def col_types
+        %w(integer string text boolean)
+      end
+
+      def infer_owner_table name
+        if name.to_s =~ /^(\S*)_(?:#{col_types.join("|")})_options$/
+          $1.pluralize
+        end
+      end
+
+      def infer_column_type name
+        if name.to_s =~ /^\S*_(#{col_types.join("|")})_options$/
+          $1
+        end
       end
     end
-    def self.infer_column_type name
-      if name.to_s =~ /^\S*_(#{col_types.join("|")})_options$/
-        $1
-      end
-    end
-  end
-end
-
-ActiveRecord::Base.class_eval do
-  def self.has_hash association_name, options = {}
-    define_method association_name do
-      instance_variable_get("@#{association_name}_hash_proxy") ||
-        instance_variable_set("@#{association_name}_hash_proxy",
-        Azimux::HashAssociationProxy.new(association_name, self, options))
-    end
-
-    define_method "#{association_name}=" do |hash|
-      s_hash = self.send("#{association_name}_hash_proxy")
-      s_hash.clear
-
-      hash.each_pair do |key,value|
-        s_hash[key] = value
-      end
-      s_hash
-    end
-
-    method_name = "after_save_for_#{association_name}".to_sym
-    define_method(method_name) do
-      association = instance_variable_get("@#{association_name}_hash_proxy")
-
-      association.save if !association.nil? && new_record?
-    end
-    after_save method_name
   end
 end
